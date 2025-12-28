@@ -5,23 +5,22 @@ import os
 from flask import Flask
 from threading import Thread
 
-# ১. আপনার তথ্য (বট টোকেন এবং আপনার আইডি)
+# আপনার দেওয়া সঠিক তথ্য
 API_TOKEN = '8473264942:AAGCVVYzBWfH775LZ7gekhXsf5vMNdFrvZw'
 ADMIN_ID = 6910394408
 
 bot = telebot.TeleBot(API_TOKEN)
-app = Flask('')
+app = Flask(__name__)
 
-# ২. Render-এর পোর্টের সমস্যা সমাধান (যাতে অফলাইন না হয়)
 @app.route('/')
 def home():
     return "Bot is Live!"
 
 def run_web():
-    port = int(os.environ.get("PORT", 8080))
+    # Render-এর জন্য সঠিক পোর্ট
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# ৩. ফরেক্স নিউজ ডাটা সংগ্রহের ফাংশন
 def get_forex_news():
     url = "https://www.forexfactory.com/calendar"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -35,7 +34,6 @@ def get_forex_news():
             impact_cell = row.select_one(".calendar__impact span")
             if impact_cell:
                 impact = impact_cell.get('class', [""])[1]
-                # হাই এবং মিডিয়াম ইমপ্যাক্ট নিউজ ফিল্টার
                 if 'high' in impact or 'medium' in impact:
                     curr = row.select_one(".calendar__currency").text.strip()
                     event = row.select_one(".calendar__event").text.strip()
@@ -62,10 +60,9 @@ def get_forex_news():
     except:
         return "সার্ভার থেকে ডাটা আনতে সমস্যা হয়েছে।"
 
-# ৪. বটের কমান্ড হ্যান্ডলার
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "স্বাগতম! ফরেক্স নিউজ ও সিগন্যাল পেতে /news লিখুন।")
+    bot.reply_to(message, "স্বাগতম! ফরেক্স নিউজ ও সিগন্যাল পেতে /news লিখুন।")
 
 @bot.message_handler(commands=['news'])
 def send_news(message):
@@ -73,12 +70,9 @@ def send_news(message):
     news_content = get_forex_news()
     bot.send_message(message.chat.id, news_content, parse_mode="Markdown")
 
-# ৫. বট চালু করার মেইন ফাংশন
 if __name__ == "__main__":
-    # ওয়েব সার্ভার আলাদা থ্রেডে চালানো (Render-এর জন্য জরুরি)
     t = Thread(target=run_web)
     t.start()
-    
-    # টেলিগ্রাম বট স্টার্ট করা
     print("Bot is starting...")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+
