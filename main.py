@@ -2,36 +2,29 @@ import os
 import telebot
 from google import genai
 from flask import Flask, request
-import PIL.Image
 
-# এটি নিরাপদ পদ্ধতি, এখানে সরাসরি কি (Key) থাকবে না
+# Render-এর Environment variables থেকে কি (Key) গুলো নেবে
 API_TOKEN = os.environ.get('API_TOKEN')
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
 bot = telebot.TeleBot(API_TOKEN)
 client = genai.Client(api_key=GEMINI_KEY)
-
 app = Flask(__name__)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "👋 আপনার বট নতুন কি (Key) দিয়ে সচল হয়েছে! এখন প্রশ্ন করুন বা ছবি পাঠান।")
-
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    bot.reply_to(message, "📸 এনালাইসিস করা হচ্ছে...")
-    file_info = bot.get_file(message.photo[-1].file_id)
-    downloaded_file = bot.download_file(file_info.file_path)
-    with open("image.jpg", 'wb') as new_file:
-        new_file.write(downloaded_file)
-    img = PIL.Image.open("image.jpg")
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=["Analyze this image and explain in Bengali", img])
-    bot.reply_to(message, response.text)
+    bot.reply_to(message, "জি, আমি সচল আছি! আমাকে যেকোনো প্রশ্ন করুন।")
 
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=message.text)
-    bot.reply_to(message, response.text)
+def handle_all_messages(message):
+    try:
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=message.text
+        )
+        bot.reply_to(message, response.text)
+    except Exception as e:
+        bot.reply_to(message, "দুঃখিত, একটু সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।")
 
 @app.route('/' + (API_TOKEN if API_TOKEN else ""), methods=['POST'])
 def getMessage():
