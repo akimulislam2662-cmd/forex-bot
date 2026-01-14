@@ -1,5 +1,0 @@
-pyTelegramBotAPI
-google-genai
-flask
-gunicorn
-Pillow
