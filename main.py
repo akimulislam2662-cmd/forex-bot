@@ -1,63 +1,106 @@
-import os
+import telebot
+import requests
+from bs4 import BeautifulSoup
+import datetime
+import pytz
+import time
 import threading
-import google.generativeai as genai
-from flask import Flask
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-# আপনার তথ্যসমূহ
-BOT_TOKEN = "8293431770:AAFd8t2vTQkxkKmLCK1_LIB-uaNDrC9Zpeo" 
-GEMINI_KEY = "AIzaSyDp95ZgLljgYL8OIXyOc6lquEBI1KJA1-c"
+# আপনার টেলিগ্রাম বট টোকেন
+TOKEN = '8473264942:AAH1UXgN3ql0Jx2CnyYybfUu6X7eAF4Xsco'
+bot = telebot.TeleBot(TOKEN)
 
-# AI কনফিগারেশন
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# কারেন্সি ও ইমোজি ডাটা
+MARKET_INFO = {
+    'USD': '🇺🇸', 'EUR': '🇪🇺', 'GBP': '🇬🇧', 'JPY': '🇯🇵', 
+    'AUD': '🇦🇺', 'CAD': '🇨🇦', 'CHF': '🇨🇭', 'NZD': '🇳🇿'
+}
 
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "All-in-One AI Bot is Online!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # টেক্সট মেসেজ (ট্রেডিং প্রশ্ন বা অন্য কিছু)
-    if update.message.text:
-        try:
-            response = model.generate_content(update.message.text)
-            await update.message.reply_text(response.text)
-        except Exception as e:
-            print(f"Error: {e}")
-
-    # ছবি (ট্রেডিং চার্ট অ্যানালাইসিস বা এডিট ইন্সট্রাকশন)
-    elif update.message.photo:
-        try:
-            photo_file = await update.message.photo[-1].get_file()
-            photo_path = "user_input.jpg"
-            await photo_file.download_to_drive(photo_path)
+def get_forex_news():
+    url = "https://www.forexfactory.com/calendar"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        rows = soup.find_all('tr', class_='calendar__row')
+        
+        extracted_news = []
+        for row in rows:
+            impact_tag = row.find('td', class_='calendar__impact')
+            is_high = impact_tag and impact_tag.find('span', class_='high')
+            is_medium = impact_tag and impact_tag.find('span', class_='medium')
             
-            with open(photo_path, "rb") as f:
-                img_data = f.read()
+            if is_high or is_medium:
+                currency = row.find('td', class_='calendar__currency').text.strip()
+                event = row.find('td', class_='calendar__event').text.strip()
+                actual = row.find('td', class_='calendar__actual').text.strip()
+                forecast = row.find('td', class_='calendar__forecast').text.strip()
+                impact_type = "🔴 HIGH" if is_high else "🟠 MEDIUM"
                 
-            contents = [
-                "এই ছবিটি বিশ্লেষণ করো। ট্রেডিং চার্ট হলে প্রপার সিগন্যাল দাও, আর এডিট করতে বললে নিয়ম বলে দাও।",
-                {"mime_type": "image/jpeg", "data": img_data}
-            ]
-            response = model.generate_content(contents)
-            await update.message.reply_text(response.text)
-            os.remove(photo_path)
-        except Exception as e:
-            print(f"Error: {e}")
+                extracted_news.append({
+                    'currency': currency, 'event': event, 'actual': actual, 
+                    'forecast': forecast, 'impact': impact_type
+                })
+        return extracted_news
+    except:
+        return []
 
-if __name__ == '__main__':
-    threading.Thread(target=run_flask, daemon=True).start()
+def result_checker(chat_id, currency, actual, forecast):
+    """নিউজ টাইম শেষ হওয়ার পর প্রফিট/লস চেক করার ফাংশন"""
+    time.sleep(10) # নিউজের ৫-১০ সেকেন্ড পর রেজাল্ট চেক করবে
     
-    # পোলিং শুরু (Conflict এড়াতে drop_updates ব্যবহার করা হয়েছে)
-    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_bot.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
+    try:
+        act_val = float(actual.replace('%', '').replace('k', '').replace('M', ''))
+        for_val = float(forecast.replace('%', '').replace('k', '').replace('M', ''))
+        
+        emoji = MARKET_INFO.get(currency, '📊')
+        
+        if act_val > for_val:
+            res_msg = f"✅ **PROFIT CONFIRMED!**\n{emoji} {currency} নিউজটি প্রফিট হয়েছে। মার্কেট শক্তিশালীভাবে উপরে গেছে! 🚀"
+        elif act_val < for_val:
+            res_msg = f"❌ **MARKET REVERSED!**\n{emoji} {currency} নিউজটি প্রফিট দিয়েছে। মার্কেট নিচে নেমে গেছে! 📉"
+        else:
+            res_msg = f"🟡 **STABLE!**\nনিউজ রেজাল্ট নিউট্রাল ছিল।"
+            
+        bot.send_message(chat_id, res_msg, parse_mode='Markdown')
+    except:
+        bot.send_message(chat_id, "⚠️ রেজাল্ট ক্যালকুলেট করা সম্ভব হয়নি।")
+
+@bot.message_handler(commands=['start'])
+def welcome(message):
+    bot.reply_to(message, "🔥 **Quotex Unique News Bot** 🔥\n\n"
+                          "আমি Forex Factory থেকে হাই ও মিডিয়াম নিউজ এনালাইসিস করি এবং রেজাল্ট শেষে প্রফিট আপডেট দেই।\n"
+                          "চেক করতে টাইপ করুন: `/check`", parse_mode='Markdown')
+
+@bot.message_handler(commands=['check'])
+def check(message):
+    bot.send_message(message.chat.id, "🔍 নিউজ ডাটা স্ক্যান করছি...")
+    news_list = get_forex_news()
     
-    print("Bot is starting freshly...")
-    app_bot.run_polling(drop_pending_updates=True)
+    if not news_list:
+        bot.send_message(message.chat.id, "✅ এখন কোনো বড় নিউজ নেই।")
+        return
+
+    for item in news_list:
+        if item['actual']: # যদি নিউজ পাবলিশ হয়ে থাকে
+            emoji = MARKET_INFO.get(item['currency'], '📊')
+            bd_time = datetime.datetime.now(pytz.timezone('Asia/Dhaka')).strftime('%I:%M %p')
+            
+            direction = "UP ⬆️" if item['actual'] > item['forecast'] else "DOWN ⬇️"
+            
+            msg = (
+                f"{item['impact']} **ANALYSIS**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji} **Market:** {item['currency']}\n"
+                f"📊 **Actual:** {item['actual']}\n"
+                f"📉 **Forecast:** {item['forecast']}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🎯 **Prediction:** {direction}\n"
+                f"⏰ **Time:** {bd_time}\n"
+            )
+            bot.send_message(message.chat.id, msg, parse_mode='Markdown')
+            
+            # রেজাল্ট চেকার রান করা (Threading ব্যবহার করে যাতে বট আটকে না যায়)
+            threading.Thread(target=result_checker, args=(message.chat.id, item['currency'], item['actual'], item['forecast'])).start()
+
+bot.polling()
