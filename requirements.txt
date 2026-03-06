@@ -1,5 +1,1 @@
-pyTelegramBotAPI
-requests
-beautifulsoup4
-pytz
-schedule
+pip install pyTelegramBotAPI requests beautifulsoup4 pandas numpy schedule
